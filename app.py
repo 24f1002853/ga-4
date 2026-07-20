@@ -25,17 +25,16 @@ class RequestBody(BaseModel):
     chunks: List[Chunk]
 
 
-def tokenize(text):
+def tokenize(text: str):
     return re.findall(r"\b[a-z0-9]+\b", text.lower())
 
 
 @app.get("/")
-def root():
+def health():
     return {"status": "ok"}
 
 
-@app.post("/")
-def grounded_qa(req: RequestBody):
+def process(req: RequestBody):
 
     if not req.question.strip():
         return {
@@ -48,7 +47,7 @@ def grounded_qa(req: RequestBody):
     q_tokens = set(tokenize(req.question))
 
     best_chunk = None
-    best_score = 0
+    best_score = 0.0
 
     for chunk in req.chunks:
         c_tokens = set(tokenize(chunk.text))
@@ -56,7 +55,7 @@ def grounded_qa(req: RequestBody):
         if len(q_tokens) == 0:
             score = 0
         else:
-            score = len(q_tokens & c_tokens) / len(q_tokens)
+            score = len(q_tokens.intersection(c_tokens)) / len(q_tokens)
 
         if score > best_score:
             best_score = score
@@ -78,3 +77,29 @@ def grounded_qa(req: RequestBody):
         "confidence": confidence,
         "answerable": True,
     }
+
+
+@app.post("/")
+def grounded_qa(req: RequestBody):
+    return process(req)
+
+
+@app.post("/grounded-answer")
+def grounded_answer(req: RequestBody):
+    return process(req)
+
+
+@app.post("/answer")
+def answer(req: RequestBody):
+    return process(req)
+
+
+@app.post("/api")
+def api(req: RequestBody):
+    return process(req)
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
