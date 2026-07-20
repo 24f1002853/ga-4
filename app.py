@@ -26,76 +26,107 @@ class RequestBody(BaseModel):
 
 
 def tokenize(text: str):
-    return re.findall(r"\b[a-z0-9]+\b", text.lower())
+    return set(re.findall(r"\b[a-z0-9]+\b", text.lower()))
+
+
+def split_sentences(text: str):
+    return [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
 
 
 @app.get("/")
-def health():
+def root():
     return {"status": "ok"}
 
 
 def process(req: RequestBody):
 
-    if not req.question.strip():
+    question = req.question.strip()
+
+    if not question:
         return {
             "answer": "I don't know",
             "citations": [],
-            "confidence": 0.3,
+            "confidence": 0.0,
             "answerable": False,
         }
 
-    q_tokens = set(tokenize(req.question))
+    q_tokens = tokenize(question)
 
+    best_sentence = None
     best_chunk = None
     best_score = 0.0
 
+    chunk_scores = []
+
     for chunk in req.chunks:
-        c_tokens = set(tokenize(chunk.text))
 
-        if len(q_tokens) == 0:
-            score = 0
-        else:
-            score = len(q_tokens.intersection(c_tokens)) / len(q_tokens)
+        sentences = split_sentences(chunk.text)
 
-        if score > best_score:
-            best_score = score
-            best_chunk = chunk
+        max_chunk_score = 0
 
-    if best_chunk is None or best_score == 0:
+        for sentence in sentences:
+
+            s_tokens = tokenize(sentence)
+
+            if not s_tokens:
+                continue
+
+            overlap = len(q_tokens & s_tokens)
+
+            score = overlap / max(len(q_tokens), 1)
+
+            if score > best_score:
+                best_score = score
+                best_sentence = sentence
+                best_chunk = chunk
+
+            max_chunk_score = max(max_chunk_score, score)
+
+        chunk_scores.append((max_chunk_score, chunk))
+
+    if best_score < 0.2:
         return {
             "answer": "I don't know",
             "citations": [],
-            "confidence": 0.3,
+            "confidence": round(best_score, 2),
             "answerable": False,
         }
 
-    confidence = round(min(0.5 + best_score * 0.5, 0.99), 2)
+    citations = []
+
+    for score, chunk in chunk_scores:
+        if score >= best_score * 0.9:
+            citations.append(chunk.chunk_id)
+
+    citations = list(dict.fromkeys(citations))
+
+    confidence = round(min(0.55 + best_score * 0.4, 0.98), 2)
 
     return {
-        "answer": best_chunk.text,
-        "citations": [best_chunk.chunk_id],
+        "answer": best_sentence,
+        "citations": citations,
         "confidence": confidence,
         "answerable": True,
     }
 
 
 @app.post("/")
-def grounded_qa(req: RequestBody):
+def qa(req: RequestBody):
     return process(req)
 
 
 @app.post("/grounded-answer")
-def grounded_answer(req: RequestBody):
+def qa2(req: RequestBody):
     return process(req)
 
 
 @app.post("/answer")
-def answer(req: RequestBody):
+def qa3(req: RequestBody):
     return process(req)
 
 
 @app.post("/api")
-def api(req: RequestBody):
+def qa4(req: RequestBody):
     return process(req)
 
 
